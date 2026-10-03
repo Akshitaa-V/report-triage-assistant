@@ -1,0 +1,66 @@
+{
+  "name": "Report triage and debrief",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "reported-message", "responseMode": "lastNode" },
+      "name": "Reported message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRIAGE_URL }}/report",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ learner_id: $json.body.learner_id, sender: $json.body.sender, subject: $json.body.subject, body: $json.body.body }) }}"
+      },
+      "name": "Detect and debrief",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": { "string": [ { "value1": "={{ $json.verdict }}", "value2": "suspicious" } ] }
+      },
+      "name": "Suspicious?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#security-reports",
+        "text": "=Reported message, risk {{ $json.risk_score }}: {{ $json.flags.join(', ') }}"
+      },
+      "name": "Notify security team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [860, 200]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{ $('Reported message').item.json.body.reporter_email }}",
+        "subject": "Thanks for reporting - here is what we found",
+        "text": "={{ $('Detect and debrief').item.json.summary }}\n\n{{ $('Detect and debrief').item.json.points.map(p => '- ' + p.sign + ': \"' + p.quote + '\" - ' + p.why).join('\\n') }}\n\n{{ $('Detect and debrief').item.json.next_step }}"
+      },
+      "name": "Send debrief to employee",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    }
+  ],
+  "connections": {
+    "Reported message": { "main": [ [ { "node": "Detect and debrief", "type": "main", "index": 0 } ] ] },
+    "Detect and debrief": { "main": [ [ { "node": "Suspicious?", "type": "main", "index": 0 } ] ] },
+    "Suspicious?": {
+      "main": [
+        [ { "node": "Notify security team", "type": "main", "index": 0 } ],
+        [ { "node": "Send debrief to employee", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Notify security team": { "main": [ [ { "node": "Send debrief to employee", "type": "main", "index": 0 } ] ] }
+  }
+}
